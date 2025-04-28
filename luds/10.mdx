@@ -1,0 +1,134 @@
+---
+title: 'LUD-10: `aes` success action in `payRequest`.'
+sidebarTitle: 'LUD-10'
+description: 'Display inline code and code blocks'
+icon: 'code'
+---
+
+`author: akumaigorodski` `discussion: https://t.me/lnurl/709`
+
+---
+
+## New `aes` field on `successAction`
+
+This defines a new `successAction` type for `payRequest`: _aes_. Besides the `tag` field it requires `description`, `ciphertext` and `iv`.
+
+The encryption key is the payment preimage for the invoice specified in the `pr` field, so it's safe to include data in the ciphertext that the user will only be able to see if they complete the payment.
+
+See example below:
+
+```Typescript
+{
+   "tag": "aes",
+   "description": "Here is your redeem code", // Up to 144 characters
+   "ciphertext": string, // base64, AES-encrypted data where encryption key is payment preimage, up to 4kb of characters
+   "iv": string // base64, initialization vector, exactly 24 characters
+}
+```
+
+The decrypted content must be a **string**, to be presented to the user along with `description`. It could be, for example, a pin code to be provided elsewhere, or just a secret word or phrase the user can then use to perform something in the world with.
+
+### LNURL-pay flow change
+
+An _aes_ `successAction` should be displayed and stored like the _message_ ([LUD-09](09.md)) type, but with the message corresponding to the plaintext after being decrypted with the payment preimage.
+
+### Implementation details
+
+Used encryption type is 256-bit AES in `AES/CBC/PKCS5Padding` mode.
+
+An encryption example in Scala:
+
+```scala
+val iv = Tools.random.getBytes(16) // exactly 16 bytes, unique for each secret
+val key = Tools.random.getBytes(32) // payment preimage
+val data = "Secret data".getBytes
+
+val aesCipher = Cipher getInstance "AES/CBC/PKCS5Padding"
+val ivParameterSpec = new IvParameterSpec(iv)
+aesCipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(key, "AES"), ivParameterSpec)
+val cipherbytes = aesCipher.doFinal(data)
+
+val ciphertext64 = ByteVector.view(cipherbytes).toBase64 // Base 64 alphabet as defined by http://tools.ietf.org/html/rfc4648#section-4 RF4648 section 4. Whitespace is ignored.
+val iv64 = ByteVector.view(iv).toBase64 // 16 bytes results in exactly 24 characters
+```
+
+A decryption example in JavaScript:
+
+```js
+import aesjs from 'aes-js'
+import Base64 from 'base64-js'
+
+let key = aesjs.utils.hex.toBytes(preimage)
+let iv = Base64.toByteArray(iv)
+let ciphertext = Base64.toByteArray(ciphertext)
+
+let CBC = new aesjs.ModeOfOperation.cbc(key, iv)
+var plaintextBytes = CBC.decrypt(ciphertext)
+
+// remove padding
+let size = plaintext.length
+let pad = plaintext[size - 1]
+plaintextBytes = plaintext.slice(0, size - pad)
+
+let plaintext = aesjs.utils.utf8.fromBytes(plaintextBytes)
+```
+
+A decryption example in Go:
+
+```golang
+import (
+    "crypto/aes"
+    "crypto/cipher"
+)
+
+ciphertext, _ := base64.StdEncoding.DecodeString(ciphertext)
+iv, _ := base64.StdEncoding.DecodeString(iv)
+block, _ := aes.NewCipher(preimage)
+mode := cipher.NewCBCDecrypter(block, iv)
+mode.CryptBlocks(ciphertext, ciphertext)
+size := len(ciphertext)
+pad := ciphertext[size-1]
+plaintext := ciphertext[:size-int(pad)]
+```
+
+Encryption and decryption example in Python:
+
+```python
+from CryptoDome.Cipher import AES
+from CryptoDome.Random import get_random_bytes
+
+def aes_decrypt(preimage: bytes, ciphertext_base64: str, iv_base64: str) -> str:
+    if len(preimage) != 32:
+        raise ValueError("AES key must be 32 bytes long")
+    iv = b64decode(iv_base64)
+    if len(iv) != 16:
+        raise ValueError("IV must be 16 bytes long")
+    ciphertext = b64decode(ciphertext_base64)
+    if len(ciphertext) % 16 != 0:
+        raise ValueError("Ciphertext must be a multiple of 16 bytes long")
+    cipher = AES.new(preimage, AES.MODE_CBC, iv)
+    decrypted = cipher.decrypt(b64decode(ciphertext_base64))
+    size = len(decrypted)
+    pad = decrypted[size - 1]
+    if (0 > pad > 16) or (pad > 1 and decrypted[size - 2] != pad):
+        raise ValueError("Decryption failed.")
+    decrypted = decrypted[: size - pad]
+    if len(decrypted) == 0:
+        raise ValueError("Decryption failed.")
+    try:
+        return decrypted.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("Decryption failed.") from exc
+
+def aes_encrypt(preimage: bytes, message: str) -> tuple[str, str]:
+    if len(preimage) != 32:
+        raise ValueError("AES key must be 32 bytes long")
+    if len(message) == 0:
+        raise ValueError("Message must not be empty")
+    iv = Random.get_random_bytes(16)
+    cipher = AES.new(preimage, AES.MODE_CBC, iv)
+    pad = 16 - len(message) % 16
+    message += chr(pad) * pad
+    ciphertext = cipher.encrypt(message.encode("utf-8"))
+    return b64encode(ciphertext).decode(), b64encode(iv).decode("utf-8")
+```

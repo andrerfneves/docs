@@ -22,14 +22,30 @@
             ]
           },
           {
-            "group": "Essentials",
+            "group": "LUDs",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/settings",
-              "essentials/navigation",
-              "essentials/reusable-snippets"
+              "luds/readme",
+              "luds/01",
+              "luds/02",
+              "luds/03",
+              "luds/04",
+              "luds/05",
+              "luds/06",
+              "luds/07",
+              "luds/08",
+              "luds/09",
+              "luds/10",
+              "luds/11",
+              "luds/12",
+              "luds/13",
+              "luds/14",
+              "luds/15",
+              "luds/16",
+              "luds/17",
+              "luds/18",
+              "luds/19",
+              "luds/20",
+              "luds/21"
             ]
           }
         ]
